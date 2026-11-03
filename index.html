@@ -1,0 +1,867 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>지구 열수지 시뮬레이터</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: 왼쪽에 큰 단면 시뮬레이션(우주-대기-지표)과 조작부, 오른쪽에 항목별 수지 계산 패널 */
+:root {
+  --bg: #eef0f3;
+  --panel: #fafbfc;
+  --panel-2: #e4e8ee;
+  --ink: #17202c;
+  --ink-2: #536073;
+  --line: #cdd4de;
+  --sw: #e89b00;
+  --lw: #d8402a;
+  --lat: #1f62d0;
+  --sen: #218a5c;
+  --ghg: #8a5fc7;
+  --ok: #2b7a4b;
+  --up: #c0392b;
+  --down: #2a67b0;
+  --btn-ink: #17202c;
+  --btn-on: #f5f7fa;
+  --space: #0a1228;
+  --sky-top: #16306b;
+  --sky-bot: #8ec3ee;
+  --font-body: "IBM Plex Sans KR", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e131b;
+    --panel: #161d28;
+    --panel-2: #202a38;
+    --ink: #e7ecf3;
+    --ink-2: #9aa7b8;
+    --line: #2b3646;
+    --sw: #ffbd33;
+    --lw: #ff7a60;
+    --lat: #6aaeff;
+    --sen: #5fd29a;
+    --ghg: #b69af0;
+    --ok: #6bc790;
+    --up: #f27a6b;
+    --down: #7db0f0;
+    --btn-ink: #e7ecf3;
+    --btn-on: #0e131b;
+    --space: #04070d;
+    --sky-top: #0b1836;
+    --sky-bot: #2f5886;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e131b;
+  --panel: #161d28;
+  --panel-2: #202a38;
+  --ink: #e7ecf3;
+  --ink-2: #9aa7b8;
+  --line: #2b3646;
+  --sw: #ffbd33;
+  --lw: #ff7a60;
+  --lat: #6aaeff;
+  --sen: #5fd29a;
+  --ghg: #b69af0;
+  --ok: #6bc790;
+  --up: #f27a6b;
+  --down: #7db0f0;
+  --btn-ink: #e7ecf3;
+  --btn-on: #0e131b;
+  --space: #04070d;
+  --sky-top: #0b1836;
+  --sky-bot: #2f5886;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.55;
+  padding-block: 20px 32px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+button, input { font: inherit; color: inherit; }
+.app { max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+
+.top { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px 24px; flex-wrap: wrap; }
+.top h1 { margin: 0; font-size: clamp(22px, 4.2vw, 30px); line-height: 1.25; font-weight: 700; letter-spacing: -0.01em; text-wrap: balance; }
+.top .sub { margin: 4px 0 0; color: var(--ink-2); max-width: 62ch; }
+.clock { display: flex; align-items: baseline; gap: 6px; color: var(--ink-2); }
+.clock .num { font-family: var(--font-num); font-size: 26px; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+.grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  grid-template-areas:
+    "stage panel"
+    "temps panel"
+    "controls panel";
+  align-items: start;
+}
+.stage { grid-area: stage; }
+.controls { grid-area: controls; }
+.tiles { grid-area: temps; }
+.panel { grid-area: panel; }
+@media (max-width: 960px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "stage" "temps" "controls" "panel";
+  }
+}
+
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.stage { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.sim-wrap { position: relative; width: 100%; aspect-ratio: 16 / 10; border-radius: 6px; overflow: hidden; background: var(--space); }
+@media (max-width: 700px) { .sim-wrap { aspect-ratio: 3 / 4; } }
+.sim-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.keybar { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--ink-2); }
+.keybar span { display: inline-flex; align-items: center; gap: 6px; }
+.keybar i { width: 18px; height: 8px; border-radius: 2px; display: inline-block; }
+.k-sw { background: var(--sw); } .k-lw { background: var(--lw); } .k-lat { background: var(--lat); } .k-sen { background: var(--sen); }
+.k-ghg { width: 9px !important; height: 9px !important; border-radius: 50% !important; border: 2px solid var(--ghg); background: transparent; }
+.narr { margin: 0; padding: 8px 12px; background: var(--panel-2); border-radius: 6px; min-height: 3.2em; display: flex; align-items: center; }
+
+.controls { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+.sec-h { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.presets, .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 7px 12px; cursor: pointer; font-weight: 500; min-height: 38px; }
+.btn:hover { border-color: var(--ink-2); }
+.btn.primary { background: var(--btn-ink); color: var(--btn-on); border-color: var(--btn-ink); min-width: 96px; font-weight: 600; }
+.btn.small { min-height: 30px; padding: 3px 10px; font-size: 13px; }
+.btn[aria-pressed="true"] { background: var(--btn-ink); color: var(--btn-on); border-color: var(--btn-ink); }
+.btn:focus-visible, input:focus-visible { outline: 2px solid var(--down); outline-offset: 2px; }
+.btn[disabled] { opacity: 0.45; cursor: default; }
+.playrow { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
+.speed { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.speed label, .ctl label.lbl { display: flex; justify-content: space-between; gap: 8px; font-weight: 500; }
+output { font-family: var(--font-num); color: var(--ink-2); font-size: 13px; }
+input[type=range] { width: 100%; accent-color: var(--btn-ink); margin: 6px 0 0; }
+.ticks { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-2); font-family: var(--font-num); }
+
+.settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; }
+@media (max-width: 700px) { .settings { grid-template-columns: minmax(0, 1fr); } }
+.ctl { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.ctl.dis { opacity: 0.45; }
+.seg { display: flex; gap: 0; }
+.seg .btn { border-radius: 0; flex: 1; }
+.seg .btn:first-child { border-radius: 6px 0 0 6px; }
+.seg .btn:last-child { border-radius: 0 6px 6px 0; margin-left: -1px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.toggle input { width: 18px; height: 18px; accent-color: var(--btn-ink); margin: 0; }
+.hint { margin: 0; font-size: 12px; color: var(--ink-2); }
+
+.chart-card { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.card-h { margin: 0; font-size: 14px; font-weight: 600; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.card-h span { font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.chart-wrap { position: relative; height: 260px; touch-action: pan-y; }
+.chart-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.tip { position: absolute; top: 4px; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; font-size: 12px; font-family: var(--font-num); white-space: nowrap; display: none; z-index: 2; }
+.ckey { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--ink-2); }
+.ckey span { display: inline-flex; align-items: center; gap: 6px; }
+.ckey i { width: 18px; height: 0; border-top: 2.5px solid var(--ink); display: inline-block; }
+.ckey i.d { border-top: 2px dashed var(--ink-2); }
+.ckey i.t { border-top: 2px dotted var(--ink-2); }
+
+.panel { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.panel-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.panel-h h2 { margin: 0; font-size: 16px; }
+.unit { display: flex; }
+.unit .btn { min-height: 30px; padding: 2px 10px; font-size: 13px; border-radius: 0; }
+.unit .btn:first-child { border-radius: 6px 0 0 6px; }
+.unit .btn:last-child { border-radius: 0 6px 6px 0; margin-left: -1px; }
+.tiles { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 8px; }
+@media (max-width: 700px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } .tile.hero { grid-column: 1 / -1; } }
+.tile { padding: 10px 12px; display: flex; flex-direction: column; justify-content: space-between; gap: 4px; min-width: 0; }
+.tile .tl { font-size: 12px; color: var(--ink-2); line-height: 1.35; }
+.tile .tv { font-family: var(--font-num); font-size: 22px; font-variant-numeric: tabular-nums; }
+.tile.hero .tv { font-size: 34px; }
+.tile .tv small { font-family: var(--font-body); font-size: 12px; color: var(--ink-2); margin-left: 3px; }
+.bcard { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.bcard h3 { margin: 0; font-size: 14px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.bcard h3 small { font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 440px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+.col h4 { margin: 0 0 4px; font-size: 12px; color: var(--ink-2); font-weight: 600; }
+.it { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 6px; align-items: baseline; padding: 2px 0; font-size: 13px; }
+.it i { width: 8px; height: 8px; border-radius: 2px; align-self: center; }
+.it b { font-family: var(--font-num); font-weight: 500; font-variant-numeric: tabular-nums; }
+.sum { display: flex; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 4px; margin-top: 4px; font-weight: 600; font-size: 13px; }
+.sum b { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.bal { border-radius: 6px; padding: 6px 10px; font-weight: 600; font-size: 13px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; background: var(--panel-2); }
+.bal.ok { color: var(--ok); }
+.bal.up { color: var(--up); }
+.bal.down { color: var(--down); }
+.bal b { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.off { color: var(--ink-2); margin: 0; font-size: 13px; }
+.note { margin: 0; font-size: 12px; color: var(--ink-2); max-width: 100ch; }
+details summary { cursor: pointer; font-weight: 600; }
+details summary:focus-visible { outline: 2px solid var(--down); outline-offset: 2px; }
+details ol { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+</style>
+
+<div class="app">
+  <header class="top">
+    <div>
+      <h1>지구 열수지 시뮬레이터</h1>
+      <p class="sub">태양 복사 에너지가 대기와 지표를 거쳐 우주로 나가는 흐름을 보고, 대기와 온실기체를 바꾸면 기온과 에너지 수지가 어떻게 달라지는지 확인합니다.</p>
+    </div>
+    <div class="clock"><span>경과 시간</span><span class="num" id="clock">0.0</span><span>년</span></div>
+  </header>
+
+  <main class="grid">
+    <section class="card stage" aria-label="열수지 시뮬레이션">
+      <div class="sim-wrap"><canvas id="sim"></canvas></div>
+      <div class="keybar" aria-hidden="true">
+        <span><i class="k-sw"></i>태양 복사 (단파)</span>
+        <span><i class="k-lw"></i>지구 복사 (적외선)</span>
+        <span><i class="k-lat"></i>증발 (잠열)</span>
+        <span><i class="k-sen"></i>대류·전도 (현열)</span>
+        <span><i class="k-ghg"></i>온실기체 분자</span>
+      </div>
+      <p class="narr" id="narr" aria-live="polite"></p>
+    </section>
+
+    <section class="card controls" aria-label="설정">
+      <div>
+        <h2 class="sec-h">상황 불러오기</h2>
+        <div class="presets" style="margin-top:6px">
+          <button class="btn" type="button" data-preset="now">현재 지구</button>
+          <button class="btn" type="button" data-preset="bare">대기 없는 지구</button>
+          <button class="btn" type="button" data-preset="g2">온실기체 2배</button>
+          <button class="btn" type="button" data-preset="g05">온실기체 절반</button>
+          <button class="btn" type="button" data-preset="snow">눈덩이 지구</button>
+        </div>
+      </div>
+
+      <div class="playrow">
+        <div class="btns">
+          <button class="btn primary" id="play" type="button">일시정지</button>
+          <button class="btn" id="reset" type="button">처음부터</button>
+        </div>
+        <div class="speed">
+          <label for="speed"><span>시뮬레이션 속도</span><output id="speedOut" for="speed"></output></label>
+          <input id="speed" type="range" min="0" max="5" step="1" value="3">
+          <div class="ticks" aria-hidden="true"><span>0.5</span><span>1</span><span>2</span><span>4</span><span>8</span><span>16</span></div>
+        </div>
+      </div>
+
+      <div class="settings">
+        <div class="ctl">
+          <span class="lbl" style="font-weight:500">대기</span>
+          <div class="seg" role="group" aria-label="대기 유무">
+            <button class="btn" type="button" id="atmOn" aria-pressed="true">대기 있음</button>
+            <button class="btn" type="button" id="atmOff" aria-pressed="false">대기 없음</button>
+          </div>
+          <p class="hint">대기가 없으면 구름, 온실기체, 대류, 증발이 모두 사라져요.</p>
+        </div>
+
+        <div class="ctl" id="ctlG">
+          <label class="lbl" for="sG"><span>온실기체 양</span><output id="oG" for="sG"></output></label>
+          <input id="sG" type="range" min="0.1" max="4" step="0.1" value="1">
+          <div class="chips">
+            <button class="btn small" type="button" data-g="0.5">적음</button>
+            <button class="btn small" type="button" data-g="1">현재</button>
+            <button class="btn small" type="button" data-g="2">많음</button>
+            <button class="btn small" type="button" data-g="4">매우 많음</button>
+          </div>
+        </div>
+
+        <div class="ctl" id="ctlC">
+          <label class="lbl" for="sC"><span>구름 (햇빛 반사)</span><output id="oC" for="sC"></output></label>
+          <input id="sC" type="range" min="0.6" max="1.4" step="0.05" value="1">
+          <p class="hint">구름은 햇빛을 반사해 지구를 식혀요. 이 모델에서는 반사 효과만 다뤄요.</p>
+        </div>
+
+        <div class="ctl">
+          <label class="lbl" for="sA"><span>지표 반사율</span><output id="oA" for="sA"></output></label>
+          <input id="sA" type="range" min="0.05" max="0.85" step="0.01" value="0.09">
+          <div class="chips">
+            <button class="btn small" type="button" data-a="0.0909">현재 평균</button>
+            <button class="btn small" type="button" data-a="0.06">바다</button>
+            <button class="btn small" type="button" data-a="0.12">숲</button>
+            <button class="btn small" type="button" data-a="0.3">사막·암석</button>
+            <button class="btn small" type="button" data-a="0.7">눈·얼음</button>
+          </div>
+        </div>
+
+        <div class="ctl">
+          <label class="lbl" for="sS"><span>태양 복사량</span><output id="oS" for="sS"></output></label>
+          <input id="sS" type="range" min="0.8" max="1.2" step="0.01" value="1">
+        </div>
+
+        <div class="ctl">
+          <span class="lbl" style="font-weight:500">사건과 되먹임</span>
+          <div class="btns">
+            <button class="btn" type="button" id="volc">화산 폭발</button>
+          </div>
+          <label class="toggle" for="fb"><input id="fb" type="checkbox">얼음-반사 되먹임 켜기</label>
+          <p class="hint">되먹임을 켜면 기온이 내려가 얼음이 늘수록 지표 반사율이 커져요.</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="tiles" aria-label="기온 요약">
+      <div class="card tile hero"><span class="tl">지표 평균기온</span><span class="tv"><span id="tTs">15.5</span><small>°C</small></span></div>
+      <div class="card tile"><span class="tl">온실효과가 없을 때의 기온</span><span class="tv"><span id="tTe">-18.0</span><small>°C</small></span></div>
+      <div class="card tile"><span class="tl">온실효과로 오른 기온</span><span class="tv"><span id="tGh">33.0</span><small>°C</small></span></div>
+      <div class="card tile"><span class="tl">행성 반사율</span><span class="tv"><span id="tAl">30</span><small>%</small></span></div>
+    </div>
+
+    <aside class="panel" aria-label="기온 그래프와 항목별 에너지 수지 계산">
+      <section class="card chart-card" aria-label="지표 평균기온 변화">
+        <h2 class="card-h">지표 평균기온 변화 <span>그래프를 짚으면 값이 표시돼요</span></h2>
+        <div class="ckey"><span><i></i>지표 평균기온</span><span><i class="d"></i>지금 설정의 평형온도</span><span><i class="t"></i>현재 지구 기준 15.5 °C</span></div>
+        <div class="chart-wrap" id="chartWrap">
+          <canvas id="chart"></canvas>
+          <div class="tip" id="tip"></div>
+        </div>
+      </section>
+
+      <div class="panel-h">
+        <h2>항목별 에너지 수지</h2>
+        <div class="unit" role="group" aria-label="단위">
+          <button class="btn" type="button" id="uRel" aria-pressed="true">입사 100 기준</button>
+          <button class="btn" type="button" id="uW" aria-pressed="false">W/m²</button>
+        </div>
+      </div>
+
+      <div class="card bcard" id="cSpace"></div>
+      <div class="card bcard" id="cAtm"></div>
+      <div class="card bcard" id="cSfc"></div>
+
+      <div class="card bcard">
+        <details>
+          <summary>수업 활동 제안</summary>
+          <ol>
+            <li>대기를 없애면 지표 복사는 어디로 가고, 평균 기온은 몇 도가 될까요?</li>
+            <li>온실기체를 2배로 늘리면 세 항목(우주, 대기, 지표)의 수지에서 어떤 값이 가장 크게 변하나요?</li>
+            <li>설정을 바꾼 직후 지표 수지가 0이 아닌 까닭과, 평형에 다시 도달하는 과정을 설명해 봅시다.</li>
+            <li>구름이 늘면 지표에 도달하는 태양 복사와 기온은 어떻게 달라질까요?</li>
+            <li>얼음-반사 되먹임을 켜고 태양 복사량을 줄이면 어떤 일이 벌어질까요?</li>
+          </ol>
+        </details>
+      </div>
+    </aside>
+  </main>
+
+  <p class="note">단순화한 모델입니다. 현재 지구의 평균 수지(입사 100 기준, 반사 30, 대기 흡수 20, 지표 흡수 50 등)를 기준으로 맞추었고, 대기는 지표보다 훨씬 빨리 평형에 도달한다고 가정했어요. 입사 100은 약 342 W/m²에 해당합니다. 화산 폭발의 영향은 눈에 보이도록 실제보다 크게 나타냈어요.</p>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var SIG = 5.670e-8, U3 = 3.42, PHI = 0.613, CAP = 2.0e8, YR = 3.156e7, DT = 0.02;
+  var SPEEDS = [0.5, 1, 2, 4, 8, 16];
+  var DEF = { atm: true, g: 1, c: 1, alpha: 0.0909, sol: 1, fb: false };
+  var P = { atm: true, g: 1, c: 1, alpha: 0.0909, sol: 1, fb: false, aer: 0 };
+  var Ts = 288.6, simT = 0, running = true, speedIdx = 3, unitW = false, accYears = 0;
+  var hT = [], hTs = [], marks = [], nextRec = 0, target = null;
+
+  function $(id) { return document.getElementById(id); }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+  /* ---------- 모델 ---------- */
+  function budget(T, p) {
+    var S = 100 * p.sol, Ra = 0, A = 0, i;
+    if (p.atm) { Ra = Math.min(25 * (p.c + p.aer), 0.8 * S); A = 0.2667 * (S - Ra); }
+    var reach = S - Ra - A, a = p.alpha;
+    if (p.fb) a = Math.max(a, a + (0.75 - a) * clamp((278 - T) / 23, 0, 1));
+    var Rs = a * reach, Qs = reach - Rs;
+    var U = SIG * Math.pow(T, 4) / U3;
+    var eps = 0, win = U, LE = 0, H = 0, G = 0, Gup = 0, Gdn = 0;
+    if (p.atm) {
+      var wf = Math.min(1, 0.087 / p.g);
+      eps = 1 - wf; win = wf * U;
+      LE = 23 * Math.exp(0.03 * (T - 288.6)); H = 7;
+      G = eps * U + A + LE + H; Gdn = PHI * G; Gup = G - Gdn;
+    }
+    var N = Qs + Gdn - U - LE - H;
+    return { S: S, Ra: Ra, A: A, reach: reach, a: a, Rs: Rs, Qs: Qs, U: U, eps: eps, absU: eps * U, win: win, LE: LE, H: H, G: G, Gup: Gup, Gdn: Gdn, N: N };
+  }
+  function findTarget(p, near) {
+    var best = null, prev = budget(150, p).N, T, n, lo, hi, m, k;
+    for (T = 151; T <= 450; T++) {
+      n = budget(T, p).N;
+      if (prev > 0 && n <= 0) {
+        lo = T - 1; hi = T;
+        for (k = 0; k < 30; k++) { m = (lo + hi) / 2; if (budget(m, p).N > 0) lo = m; else hi = m; }
+        m = (lo + hi) / 2;
+        if (best === null || Math.abs(m - near) < Math.abs(best - near)) best = m;
+      }
+      prev = n;
+    }
+    return best;
+  }
+  function stepModel(dt) {
+    var b = budget(Ts, P);
+    Ts += b.N * U3 / CAP * dt * YR;
+    Ts = clamp(Ts, 120, 520);
+    if (P.aer > 0) { P.aer *= Math.exp(-dt / 1.2); if (P.aer < 0.003) P.aer = 0; }
+    simT += dt;
+  }
+  function record() {
+    hT.push(simT); hTs.push(Ts - 273.15);
+    if (hT.length > 6000) { hT.splice(0, 1000); hTs.splice(0, 1000); }
+  }
+  function advance(years) {
+    accYears += years;
+    var g = 0;
+    while (accYears >= DT && g < 2000) {
+      stepModel(DT); accYears -= DT; g++;
+      if (simT >= nextRec) { record(); nextRec += 0.1; }
+    }
+  }
+  function addMark(label) { marks.push({ t: simT, label: label }); }
+
+  /* ---------- 설정 반영 ---------- */
+  function gTag(g) { return g < 0.8 ? '적음' : g < 1.3 ? '현재 수준' : g < 3 ? '많음' : '매우 많음'; }
+  function syncUI() {
+    $('atmOn').setAttribute('aria-pressed', P.atm ? 'true' : 'false');
+    $('atmOff').setAttribute('aria-pressed', P.atm ? 'false' : 'true');
+    $('sG').value = P.g; $('oG').textContent = '현재의 ' + P.g.toFixed(1) + '배 · ' + gTag(P.g);
+    $('sC').value = P.c; $('oC').textContent = '현재의 ' + P.c.toFixed(2) + '배';
+    $('sA').value = P.alpha; $('oA').textContent = P.alpha.toFixed(2);
+    $('sS').value = P.sol; $('oS').textContent = '현재의 ' + P.sol.toFixed(2) + '배';
+    $('fb').checked = P.fb;
+    $('ctlG').classList.toggle('dis', !P.atm); $('ctlC').classList.toggle('dis', !P.atm);
+    $('sG').disabled = !P.atm; $('sC').disabled = !P.atm; $('volc').disabled = !P.atm;
+    var bs = document.querySelectorAll('[data-g]'), i;
+    for (i = 0; i < bs.length; i++) { bs[i].disabled = !P.atm; bs[i].setAttribute('aria-pressed', Math.abs(+bs[i].getAttribute('data-g') - P.g) < 0.05 ? 'true' : 'false'); }
+    bs = document.querySelectorAll('[data-a]');
+    for (i = 0; i < bs.length; i++) bs[i].setAttribute('aria-pressed', Math.abs(+bs[i].getAttribute('data-a') - P.alpha) < 0.006 ? 'true' : 'false');
+    $('speedOut').textContent = SPEEDS[speedIdx] + '배속 (1초 = ' + SPEEDS[speedIdx] + '년)';
+    $('play').textContent = running ? '일시정지' : '재생';
+    $('uRel').setAttribute('aria-pressed', unitW ? 'false' : 'true');
+    $('uW').setAttribute('aria-pressed', unitW ? 'true' : 'false');
+    dirty = true;
+  }
+  var dirty = true;
+  function applyPreset(k) {
+    var lab = '';
+    P.atm = true; P.g = 1; P.c = 1; P.alpha = 0.0909; P.sol = 1; P.fb = false;
+    if (k === 'now') lab = '현재 지구';
+    if (k === 'bare') { P.atm = false; P.alpha = 0.3; lab = '대기 없음'; }
+    if (k === 'g2') { P.g = 2; lab = '온실기체 2배'; }
+    if (k === 'g05') { P.g = 0.5; lab = '온실기체 절반'; }
+    if (k === 'snow') { P.sol = 0.85; P.fb = true; lab = '눈덩이 지구'; }
+    addMark(lab); syncUI();
+  }
+  function resetAll() {
+    P.atm = true; P.g = 1; P.c = 1; P.alpha = 0.0909; P.sol = 1; P.fb = false; P.aer = 0;
+    Ts = findTarget(P, 288) || 288.6; simT = 0; accYears = 0;
+    hT = []; hTs = []; marks = []; nextRec = 0; record(); nextRec = 0.1;
+    syncUI();
+  }
+
+  /* ---------- 색상 ---------- */
+  var C = {};
+  function readColors() {
+    var cs = getComputedStyle(document.documentElement);
+    ['--sw', '--lw', '--lat', '--sen', '--ghg', '--ink', '--ink-2', '--line', '--panel', '--panel-2', '--space', '--sky-top', '--sky-bot', '--up', '--down'].forEach(function (k) { C[k] = cs.getPropertyValue(k).trim(); });
+  }
+  function hexRGB(h) {
+    h = h.replace('#', '');
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  }
+  function lerpC(a, b, t) { return 'rgb(' + Math.round(a[0] + (b[0] - a[0]) * t) + ',' + Math.round(a[1] + (b[1] - a[1]) * t) + ',' + Math.round(a[2] + (b[2] - a[2]) * t) + ')'; }
+  function surfaceColor(a) {
+    var stops = [[0.05, [29, 79, 122]], [0.12, [60, 122, 62]], [0.3, [184, 160, 112]], [0.7, [232, 240, 245]]], i;
+    if (a <= stops[0][0]) return lerpC(stops[0][1], stops[0][1], 0);
+    for (i = 1; i < stops.length; i++) {
+      if (a <= stops[i][0]) return lerpC(stops[i - 1][1], stops[i][1], (a - stops[i - 1][0]) / (stops[i][0] - stops[i - 1][0]));
+    }
+    return lerpC(stops[3][1], stops[3][1], 0);
+  }
+
+  /* ---------- 흐름 정의 ---------- */
+  var SPEC = [
+    { k: 'in', c: '--sw', name: '입사 태양복사', pts: [[.07, .05], [.13, .10], [.13, .30]], v: function (b) { return b.S; }, lp: [.13, .20], atm: true },
+    { k: 'infull', c: '--sw', name: '입사 태양복사', pts: [[.07, .05], [.13, .10], [.13, .66]], v: function (b) { return b.S; }, lp: [.13, .40], noatm: true },
+    { k: 'ra', c: '--sw', name: '대기·구름 반사', pts: [[.13, .30], [.21, .25], [.21, .01]], v: function (b) { return b.Ra; }, lp: [.21, .12], atm: true },
+    { k: 'mid', c: '--sw', pts: [[.13, .30], [.13, .44]], v: function (b) { return b.S - b.Ra; }, atm: true, nolabel: true },
+    { k: 'A', c: '--sw', name: '대기 흡수', pts: [[.13, .44], [.28, .44]], v: function (b) { return b.A; }, lp: [.24, .39], atm: true },
+    { k: 'low', c: '--sw', name: '지표 도달', pts: [[.13, .44], [.13, .66]], v: function (b) { return b.reach; }, lp: [.13, .56], atm: true },
+    { k: 'rs', c: '--sw', name: '지표 반사', pts: [[.35, .66], [.35, .01]], v: function (b) { return b.Rs; }, lp: [.35, .58] },
+    { k: 'up', c: '--lw', name: '지표 복사', pts: [[.47, .66], [.47, .44]], v: function (b) { return b.U; }, lp: [.47, .60], atm: true },
+    { k: 'win', c: '--lw', name: '대기창 통과', pts: [[.47, .44], [.47, .01]], v: function (b) { return b.win; }, lp: [.47, .20], atm: true },
+    { k: 'upfull', c: '--lw', name: '지표 복사', pts: [[.47, .66], [.47, .01]], v: function (b) { return b.U; }, lp: [.47, .35], noatm: true },
+    { k: 'gup', c: '--lw', name: '대기→우주', pts: [[.60, .46], [.60, .01]], v: function (b) { return b.Gup; }, lp: [.60, .28], atm: true },
+    { k: 'gdn', c: '--lw', name: '대기→지표', pts: [[.72, .46], [.72, .66]], v: function (b) { return b.Gdn; }, lp: [.72, .60], atm: true },
+    { k: 'lat', c: '--lat', name: '증발(잠열)', pts: [[.84, .66], [.84, .46]], v: function (b) { return b.LE; }, lp: [.84, .53], atm: true, wave: true },
+    { k: 'sen', c: '--sen', name: '대류(현열)', pts: [[.94, .66], [.94, .46]], v: function (b) { return b.H; }, lp: [.94, .60], atm: true }
+  ];
+  var PART = {};
+
+  /* ---------- 시뮬레이션 화면 ---------- */
+  var sc = $('sim'), sx = sc.getContext('2d'), SW = 900, SH = 560;
+  var mol = [], clouds = [[.17, .31, 1], [.25, .27, .8], [.08, .33, .75]], i0;
+  for (i0 = 0; i0 < 110; i0++) mol.push({ x: Math.random(), y: 0.13 + Math.random() * 0.5, ph: Math.random() * 6.283, sp: 0.4 + Math.random() * 0.8 });
+  var stars = [];
+  for (i0 = 0; i0 < 60; i0++) stars.push([Math.random(), Math.random() * 0.66, Math.random()]);
+
+  function px(pt) { return [pt[0] * SW, pt[1] * SH]; }
+  function polyInfo(pts) {
+    var out = [], tot = 0, i, a, b, l;
+    for (i = 0; i < pts.length; i++) out.push(px(pts[i]));
+    var segs = [];
+    for (i = 1; i < out.length; i++) {
+      a = out[i - 1]; b = out[i]; l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      segs.push({ a: a, b: b, l: l, c: tot }); tot += l;
+    }
+    return { p: out, segs: segs, len: tot };
+  }
+  function pointAt(info, s) {
+    var i, sg;
+    for (i = 0; i < info.segs.length; i++) {
+      sg = info.segs[i];
+      if (s <= sg.c + sg.l || i === info.segs.length - 1) {
+        var u = sg.l > 0 ? (s - sg.c) / sg.l : 0;
+        return [sg.a[0] + (sg.b[0] - sg.a[0]) * u, sg.a[1] + (sg.b[1] - sg.a[1]) * u, (sg.b[0] - sg.a[0]) / sg.l, (sg.b[1] - sg.a[1]) / sg.l];
+      }
+    }
+    return [0, 0, 0, 1];
+  }
+  function rrect(ctx, x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+    ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r); ctx.lineTo(x + r, y + h);
+    ctx.arcTo(x, y + h, x, y + h - r, r); ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r); ctx.closePath();
+  }
+  function pill(ctx, x, y, text, col, fs) {
+    ctx.font = '600 ' + fs + 'px "IBM Plex Sans KR", sans-serif';
+    var w = ctx.measureText(text).width + 12, h = fs + 8;
+    x = clamp(x - w / 2, 3, SW - w - 3); y = y - h / 2;
+    rrect(ctx, x, y, w, h, 5); ctx.fillStyle = C['--panel']; ctx.globalAlpha = 0.94; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.lineWidth = 1.5; ctx.strokeStyle = col; ctx.stroke();
+    ctx.fillStyle = C['--ink']; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, x + 6, y + h / 2 + 0.5);
+  }
+  function fmtD(v) { return String(Math.round(v * (unitW ? U3 : 1))); }
+
+  function cloudShape(ctx, cx, cy, r, alpha) {
+    ctx.globalAlpha = alpha; ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(cx - r * 0.9, cy + r * 0.2, r * 0.7, 0, 6.283); ctx.arc(cx, cy - r * 0.15, r * 0.95, 0, 6.283);
+    ctx.arc(cx + r * 1.0, cy + r * 0.15, r * 0.75, 0, 6.283); ctx.rect(cx - r * 0.9, cy + r * 0.1, r * 1.9, r * 0.8); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  function drawSim(now, dtReal) {
+    var ctx = sx, W = SW, H = SH, b = budget(Ts, P), i, k;
+    var small = W < 560, fs = small ? 11 : clamp(W / 70, 11, 14);
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = C['--space']; ctx.fillRect(0, 0, W, H);
+    for (i = 0; i < stars.length; i++) { ctx.globalAlpha = 0.25 + 0.5 * stars[i][2]; ctx.fillStyle = '#ffffff'; ctx.fillRect(stars[i][0] * W, stars[i][1] * H, 1.5, 1.5); }
+    ctx.globalAlpha = 1;
+    var yTop = 0.10 * H, ySfc = 0.66 * H;
+    if (P.atm) {
+      var gr = ctx.createLinearGradient(0, yTop, 0, ySfc);
+      gr.addColorStop(0, C['--sky-top']); gr.addColorStop(1, C['--sky-bot']);
+      ctx.fillStyle = gr; ctx.fillRect(0, yTop, W, ySfc - yTop);
+      ctx.setLineDash([6, 5]); ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, yTop); ctx.lineTo(W, yTop); ctx.stroke(); ctx.setLineDash([]);
+      // 온실기체 분자
+      var nm = Math.min(mol.length, Math.round(10 + 22 * P.g));
+      ctx.strokeStyle = C['--ghg']; ctx.lineWidth = 1.8; ctx.globalAlpha = 0.9;
+      for (i = 0; i < nm; i++) {
+        var m = mol[i], mx = (m.x + Math.sin(now / 1000 * m.sp + m.ph) * 0.008) * W, my = (m.y + Math.cos(now / 1100 * m.sp + m.ph) * 0.01) * H;
+        ctx.beginPath(); ctx.arc(mx, my, small ? 2.4 : 3.2, 0, 6.283); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      // 구름
+      var ctot = P.c + P.aer * 2, ca = clamp(0.2 + 0.55 * ctot, 0.1, 0.98);
+      for (i = 0; i < clouds.length; i++) cloudShape(ctx, clouds[i][0] * W, clouds[i][1] * H, W * 0.026 * clouds[i][2] * (0.65 + 0.45 * ctot), ca);
+      if (P.aer > 0.01) {
+        ctx.globalAlpha = clamp(P.aer * 2.5, 0, 0.5); ctx.fillStyle = '#7a6a5a';
+        ctx.fillRect(0, yTop, W, ySfc - yTop); ctx.globalAlpha = 1;
+      }
+    } else {
+      ctx.fillStyle = 'rgba(207,224,255,0.35)'; ctx.font = '600 ' + (fs + 4) + 'px "IBM Plex Sans KR", sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('대기 없음 (진공)', W * 0.66, H * 0.33);
+    }
+    // 지표
+    ctx.fillStyle = surfaceColor(b.a); ctx.fillRect(0, ySfc, W, H - ySfc);
+    ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 1.2;
+    for (i = 0; i < 16; i++) {
+      var wx = (i + 0.5) / 16 * W, wy = ySfc + (H - ySfc) * (0.25 + 0.5 * ((i * 7) % 5) / 5);
+      ctx.beginPath(); ctx.moveTo(wx - 12, wy); ctx.quadraticCurveTo(wx, wy - 5, wx + 12, wy); ctx.stroke();
+    }
+    var tg = ctx.createLinearGradient(0, ySfc, 0, H); tg.addColorStop(0, 'rgba(0,0,0,0)'); tg.addColorStop(1, 'rgba(0,0,0,0.28)');
+    ctx.fillStyle = tg; ctx.fillRect(0, ySfc, W, H - ySfc);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(0, ySfc - 1, W, 2);
+    // 태양
+    var sxp = W * 0.05, syp = H * 0.05, sr = Math.max(12, W * 0.024) * (0.9 + 0.1 * P.sol);
+    var sg = ctx.createRadialGradient(sxp, syp, sr * 0.3, sxp, syp, sr * 2.6);
+    sg.addColorStop(0, 'rgba(255,214,90,0.95)'); sg.addColorStop(1, 'rgba(255,190,50,0)');
+    ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(sxp, syp, sr * 2.6, 0, 6.283); ctx.fill();
+    ctx.fillStyle = '#ffd35a'; ctx.beginPath(); ctx.arc(sxp, syp, sr, 0, 6.283); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,214,90,0.8)'; ctx.lineWidth = 2;
+    for (i = 0; i < 12; i++) {
+      var an = i / 12 * 6.283 + now / 6000;
+      ctx.beginPath(); ctx.moveTo(sxp + Math.cos(an) * sr * 1.25, syp + Math.sin(an) * sr * 1.25);
+      ctx.lineTo(sxp + Math.cos(an) * sr * 1.6, syp + Math.sin(an) * sr * 1.6); ctx.stroke();
+    }
+    // 흐름
+    var drawn = [];
+    for (k = 0; k < SPEC.length; k++) {
+      var sp = SPEC[k];
+      if (sp.atm && !P.atm) continue;
+      if (sp.noatm && P.atm) continue;
+      var val = sp.v(b);
+      if (!(val > 0.25)) continue;
+      var wpx = clamp(val / 100 * W * 0.034, 3, W * 0.07);
+      var info = polyInfo(sp.pts), col = C[sp.c];
+      var arrowLen = Math.min(info.len * 0.4, wpx * 0.9 + 12);
+      var bp = info.p.slice(), last = bp[bp.length - 1], prev = bp[bp.length - 2];
+      var dl = Math.hypot(last[0] - prev[0], last[1] - prev[1]);
+      var ux = (last[0] - prev[0]) / dl, uy = (last[1] - prev[1]) / dl;
+      var isEnd = sp.k !== 'in' && sp.k !== 'infull' && sp.k !== 'mid' && sp.k !== 'low';
+      if (isEnd && dl > arrowLen) bp[bp.length - 1] = [last[0] - ux * arrowLen, last[1] - uy * arrowLen];
+      ctx.lineJoin = 'round'; ctx.lineCap = 'butt';
+      ctx.beginPath(); ctx.moveTo(bp[0][0], bp[0][1]); for (i = 1; i < bp.length; i++) ctx.lineTo(bp[i][0], bp[i][1]);
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = wpx + 3; ctx.stroke();
+      ctx.strokeStyle = col; ctx.globalAlpha = 0.62; ctx.lineWidth = wpx; ctx.stroke(); ctx.globalAlpha = 1;
+      if (isEnd) {
+        var hw = wpx * 0.95 + 5;
+        ctx.beginPath(); ctx.moveTo(last[0], last[1]);
+        ctx.lineTo(last[0] - ux * arrowLen - uy * hw, last[1] - uy * arrowLen + ux * hw);
+        ctx.lineTo(last[0] - ux * arrowLen + uy * hw, last[1] - uy * arrowLen - ux * hw); ctx.closePath();
+        ctx.fillStyle = col; ctx.globalAlpha = 0.85; ctx.fill(); ctx.globalAlpha = 1;
+      }
+      // 입자
+      var want = clamp(Math.round(wpx * info.len / 240), 1, 180);
+      var pf = PART[sp.k] || (PART[sp.k] = []);
+      while (pf.length < want) pf.push({ s: Math.random(), o: Math.random() - 0.5 });
+      if (pf.length > want) pf.length = want;
+      ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.9;
+      for (i = 0; i < pf.length; i++) {
+        pf[i].s += (dtReal * 62) / info.len; if (pf[i].s >= 1) pf[i].s -= 1;
+        var pp = pointAt(info, pf[i].s * info.len), off = pf[i].o * wpx * 0.8;
+        if (sp.wave) off += Math.sin(pf[i].s * info.len * 0.07 + now / 300) * 4;
+        ctx.beginPath(); ctx.arc(pp[0] - pp[3] * off, pp[1] + pp[2] * off, small ? 1.5 : 1.9, 0, 6.283); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      if (!sp.nolabel && sp.lp) drawn.push({ sp: sp, val: val, col: col });
+    }
+    for (k = 0; k < drawn.length; k++) {
+      var d = drawn[k];
+      pill(ctx, d.sp.lp[0] * W, d.sp.lp[1] * H, small ? fmtD(d.val) : d.sp.name + ' ' + fmtD(d.val), d.col, fs);
+    }
+    pill(ctx, W * 0.13, H * 0.715, small ? fmtD(b.Qs) : '지표 흡수 ' + fmtD(b.Qs), C['--sw'], fs);
+    // 기온 표시
+    var tTxt = (Ts - 273.15).toFixed(1) + ' °C';
+    ctx.font = '700 ' + (small ? 18 : 24) + 'px "IBM Plex Mono", ui-monospace, monospace';
+    var tw = ctx.measureText(tTxt).width + 24, th = small ? 34 : 42, tx = W * 0.5 - tw / 2 + (small ? 0 : W * 0.04), ty = H * 0.8;
+    rrect(ctx, tx, ty, tw, th, 7); ctx.fillStyle = C['--panel']; ctx.globalAlpha = 0.95; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.fillStyle = C['--ink']; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(tTxt, tx + tw / 2, ty + th / 2 + 1);
+    ctx.font = '600 ' + fs + 'px "IBM Plex Sans KR", sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.textAlign = 'center'; ctx.fillText('지표 평균기온', tx + tw / 2, ty - 10);
+    // 영역 이름
+    ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(220,232,255,0.85)'; ctx.font = '600 ' + fs + 'px "IBM Plex Sans KR", sans-serif';
+    ctx.fillText('우주', W - 8, H * 0.04);
+    if (P.atm) ctx.fillText('대기', W - 8, H * 0.135);
+    ctx.fillText('지표', W - 8, H * 0.69);
+  }
+
+  /* ---------- 오른쪽 패널 ---------- */
+  function fv(v) { return unitW ? String(Math.round(v * U3)) : v.toFixed(1); }
+  function itm(col, label, v) { return '<div class="it"><i style="background:' + col + '"></i><span>' + label + '</span><b>' + fv(v) + '</b></div>'; }
+  function balHTML(d) {
+    var thr = 0.15, cls, txt;
+    if (Math.abs(d) < thr) { cls = 'ok'; txt = '평형 (들어온 양 = 나간 양)'; }
+    else if (d > 0) { cls = 'up'; txt = '에너지 남음, 기온 상승'; }
+    else { cls = 'down'; txt = '에너지 부족, 기온 하강'; }
+    return '<div class="bal ' + cls + '"><span>' + txt + '</span><b>' + (d > 0 && Math.abs(d) >= thr ? '+' : '') + (Math.abs(d) < thr ? fv(0) : fv(d)) + '</b></div>';
+  }
+  function sumHTML(label, v) { return '<div class="sum"><span>' + label + '</span><b>' + fv(v) + '</b></div>'; }
+  function renderPanel() {
+    var b = budget(Ts, P), c = C, u = unitW ? ' (W/m²)' : '';
+    var Te = Math.pow((b.S - b.Ra - b.Rs) * U3 / SIG, 0.25);
+    $('tTs').textContent = (Ts - 273.15).toFixed(1);
+    $('tTe').textContent = (Te - 273.15).toFixed(1);
+    $('tGh').textContent = (Ts - Te).toFixed(1);
+    $('tAl').textContent = Math.round((b.Ra + b.Rs) / b.S * 100);
+    // 우주
+    var inS = b.S, outS = b.Ra + b.Rs + b.win + b.Gup;
+    $('cSpace').innerHTML = '<h3>① 지구 전체 (우주 기준)<small>입사 = 반사 + 방출</small></h3><div class="cols"><div class="col"><h4>들어오는 에너지' + u + '</h4>' +
+      itm(c['--sw'], '입사 태양복사', b.S) + sumHTML('합계', inS) + '</div><div class="col"><h4>나가는 에너지' + u + '</h4>' +
+      itm(c['--sw'], '대기·구름 반사', b.Ra) + itm(c['--sw'], '지표 반사', b.Rs) + itm(c['--lw'], '지표→우주 (대기창)', b.win) + itm(c['--lw'], '대기→우주 복사', b.Gup) + sumHTML('합계', outS) + '</div></div>' + balHTML(inS - outS);
+    // 대기
+    if (P.atm) {
+      var inA = b.A + b.absU + b.H + b.LE, outA = b.Gup + b.Gdn;
+      $('cAtm').innerHTML = '<h3>② 대기<small>흡수 = 방출</small></h3><div class="cols"><div class="col"><h4>들어오는 에너지' + u + '</h4>' +
+        itm(c['--sw'], '태양복사 흡수', b.A) + itm(c['--lw'], '지표복사 흡수', b.absU) + itm(c['--sen'], '대류·전도(현열)', b.H) + itm(c['--lat'], '증발(잠열)', b.LE) + sumHTML('합계', inA) +
+        '</div><div class="col"><h4>나가는 에너지' + u + '</h4>' + itm(c['--lw'], '대기→우주 복사', b.Gup) + itm(c['--lw'], '대기→지표 복사', b.Gdn) + sumHTML('합계', outA) + '</div></div>' + balHTML(inA - outA);
+    } else {
+      $('cAtm').innerHTML = '<h3>② 대기</h3><p class="off">대기가 없어서 흡수, 방출, 대류, 증발이 모두 0이에요.</p>';
+    }
+    // 지표
+    var inG = b.Qs + b.Gdn, outG = b.U + b.H + b.LE;
+    $('cSfc').innerHTML = '<h3>③ 지표<small>흡수 = 방출 (평형일 때)</small></h3><div class="cols"><div class="col"><h4>들어오는 에너지' + u + '</h4>' +
+      itm(c['--sw'], '태양복사 흡수', b.Qs) + itm(c['--lw'], '대기 복사 흡수', b.Gdn) + sumHTML('합계', inG) +
+      '</div><div class="col"><h4>나가는 에너지' + u + '</h4>' + itm(c['--lw'], '지표 복사', b.U) + itm(c['--sen'], '대류·전도(현열)', b.H) + itm(c['--lat'], '증발(잠열)', b.LE) + sumHTML('합계', outG) + '</div></div>' + balHTML(inG - outG);
+  }
+  function describe() {
+    var b = budget(Ts, P), parts = [], diff = target === null ? 0 : target - Ts;
+    if (target === null) parts.push('이 설정에서는 안정한 평형 상태를 찾지 못했어요.');
+    else if (Math.abs(diff) < 0.3) {
+      parts.push(P.atm ? '들어오는 에너지와 나가는 에너지가 같아 복사 평형을 이루고 있어요.' : '대기가 없어서 지표가 흡수한 에너지를 모두 지표 복사로 우주에 내보내고 있어요.');
+    } else if (diff > 0) parts.push('지표가 얻는 에너지가 잃는 에너지보다 많아서 기온이 오르는 중이에요. 목표 평형온도는 ' + (target - 273.15).toFixed(1) + ' °C예요.');
+    else parts.push('지표가 잃는 에너지가 얻는 에너지보다 많아서 기온이 내려가는 중이에요. 목표 평형온도는 ' + (target - 273.15).toFixed(1) + ' °C예요.');
+    if (P.atm && P.g > 1.5 && Math.abs(diff) < 0.3) parts.push('온실기체가 많아 지표 복사의 대부분이 대기에 흡수되고, 대기가 지표로 되돌려 보내는 복사가 커졌어요.');
+    if (P.atm && P.g < 0.7 && Math.abs(diff) < 0.3) parts.push('온실기체가 적어 지표 복사가 우주로 많이 빠져나가요.');
+    if (P.fb && b.a > P.alpha + 0.02) parts.push('얼음이 늘어 지표 반사율이 ' + b.a.toFixed(2) + '로 커졌어요.');
+    if (P.aer > 0.02) parts.push('화산재가 햇빛을 더 반사하고 있어요.');
+    return parts.join(' ');
+  }
+
+  /* ---------- 그래프 ---------- */
+  var cc = $('chart'), cx = cc.getContext('2d'), CW = 700, CH = 280, hover = null, SPAN = 60;
+  function drawChart() {
+    var ctx = cx, w = CW, h = CH, padL = 46, padR = 12, padT = 18, padB = 26, i;
+    ctx.clearRect(0, 0, w, h);
+    var t1 = Math.max(simT, SPAN), t0 = t1 - SPAN, x0 = padL, x1 = w - padR;
+    function X(t) { return x0 + (t - t0) / (t1 - t0) * (x1 - x0); }
+    var lo = 0, hi = hT.length, m;
+    while (lo < hi) { m = (lo + hi) >> 1; if (hT[m] < t0 - 0.2) lo = m + 1; else hi = m; }
+    var first = Math.max(0, lo - 1), ymin = 15.5, ymax = 15.5;
+    for (i = first; i < hT.length; i++) { if (hTs[i] < ymin) ymin = hTs[i]; if (hTs[i] > ymax) ymax = hTs[i]; }
+    if (target !== null) { ymin = Math.min(ymin, target - 273.15); ymax = Math.max(ymax, target - 273.15); }
+    var span = Math.max(12, ymax - ymin), mid = (ymax + ymin) / 2;
+    var step = span > 60 ? 20 : span > 30 ? 10 : span > 15 ? 5 : 2;
+    var yl = Math.floor((mid - span * 0.6) / step) * step, yh = Math.ceil((mid + span * 0.6) / step) * step;
+    function Y(v) { return h - padB - (v - yl) / (yh - yl) * (h - padT - padB); }
+    ctx.font = '11px "IBM Plex Mono", ui-monospace, monospace'; ctx.textBaseline = 'middle';
+    ctx.strokeStyle = C['--line']; ctx.fillStyle = C['--ink-2']; ctx.lineWidth = 1; ctx.textAlign = 'right';
+    for (var v = yl; v <= yh + 0.001; v += step) {
+      var yy = Math.round(Y(v)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x1, yy); ctx.stroke();
+      ctx.fillText(v + '°', x0 - 6, yy);
+    }
+    ctx.textAlign = 'center';
+    var tk = Math.ceil(t0 / 10) * 10;
+    for (; tk <= t1 + 0.001; tk += 10) {
+      var xx = Math.round(X(tk)) + 0.5;
+      ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.moveTo(xx, padT); ctx.lineTo(xx, h - padB); ctx.stroke(); ctx.globalAlpha = 1;
+      ctx.fillText(tk + '년', xx, h - padB + 13);
+    }
+    // 기준선
+    ctx.setLineDash([2, 4]); ctx.strokeStyle = C['--ink-2']; ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.moveTo(x0, Y(15.5)); ctx.lineTo(x1, Y(15.5)); ctx.stroke();
+    if (target !== null) {
+      ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(x0, Y(target - 273.15)); ctx.lineTo(x1, Y(target - 273.15)); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    // 사건 표지
+    ctx.font = '600 11px "IBM Plex Sans KR", sans-serif'; ctx.textAlign = 'left';
+    var lastEnd = -1e9;
+    for (i = 0; i < marks.length; i++) {
+      if (marks[i].t < t0 || marks[i].t > t1) continue;
+      var mx = X(marks[i].t);
+      ctx.strokeStyle = C['--up']; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.8;
+      ctx.beginPath(); ctx.moveTo(mx, padT - 4); ctx.lineTo(mx, h - padB); ctx.stroke(); ctx.globalAlpha = 1;
+      var tw = ctx.measureText(marks[i].label).width, tx = Math.min(mx + 4, w - tw - 4);
+      if (tx > lastEnd + 6) { ctx.fillStyle = C['--up']; ctx.textBaseline = 'middle'; ctx.fillText(marks[i].label, tx, 7); lastEnd = tx + tw; }
+    }
+    // 기온선
+    ctx.beginPath();
+    var started = false, lx = x0, ly = h - padB;
+    for (i = first; i < hT.length; i++) {
+      var pxx = Math.max(x0, X(hT[i])), pyy = Y(hTs[i]);
+      if (!started) { ctx.moveTo(pxx, pyy); started = true; } else ctx.lineTo(pxx, pyy);
+      lx = pxx; ly = pyy;
+    }
+    if (started) {
+      ctx.strokeStyle = C['--ink']; ctx.lineWidth = 2.4; ctx.lineJoin = 'round'; ctx.stroke();
+      ctx.beginPath(); ctx.arc(lx, ly, 4, 0, 6.283); ctx.fillStyle = C['--ink']; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = C['--panel']; ctx.stroke();
+    }
+    // 호버
+    var tip = $('tip');
+    if (hover !== null && hT.length) {
+      var ht = t0 + (hover - x0) / (x1 - x0) * (t1 - t0);
+      if (ht >= t0 && ht <= simT) {
+        var bi = first, bd = 1e9, dd;
+        for (i = first; i < hT.length; i++) { dd = Math.abs(hT[i] - ht); if (dd < bd) { bd = dd; bi = i; } }
+        var hx = X(hT[bi]);
+        ctx.strokeStyle = C['--ink']; ctx.globalAlpha = 0.5; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(hx, padT); ctx.lineTo(hx, h - padB); ctx.stroke(); ctx.globalAlpha = 1;
+        tip.style.display = 'block'; tip.textContent = hT[bi].toFixed(1) + '년  ' + hTs[bi].toFixed(1) + ' °C';
+        var tw2 = tip.offsetWidth; tip.style.left = Math.max(4, Math.min(w - tw2 - 4, hx - tw2 / 2)) + 'px'; tip.style.top = (padT + 4) + 'px';
+      } else tip.style.display = 'none';
+    } else tip.style.display = 'none';
+  }
+
+  /* ---------- 크기 ---------- */
+  function fit(canvas, ctx, wrap, cb) {
+    var r = wrap.getBoundingClientRect(), w = Math.max(200, Math.round(r.width)), h = Math.max(120, Math.round(r.height)), dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); cb(w, h);
+  }
+  function resizeAll() {
+    fit(sc, sx, sc.parentElement, function (w, h) { SW = w; SH = h; });
+    fit(cc, cx, $('chartWrap'), function (w, h) { CW = w; CH = h; });
+  }
+  if (window.ResizeObserver) { var ro = new ResizeObserver(resizeAll); ro.observe(sc.parentElement); ro.observe($('chartWrap')); }
+  window.addEventListener('resize', resizeAll);
+
+  /* ---------- 입력 ---------- */
+  function onPresetBtn(e) { applyPreset(e.currentTarget.getAttribute('data-preset')); }
+  var pb = document.querySelectorAll('[data-preset]'), j;
+  for (j = 0; j < pb.length; j++) pb[j].addEventListener('click', onPresetBtn);
+  $('atmOn').addEventListener('click', function () { if (!P.atm) { P.atm = true; if (P.alpha > 0.25 && P.alpha < 0.35) P.alpha = 0.0909; addMark('대기 생성'); syncUI(); } });
+  $('atmOff').addEventListener('click', function () { if (P.atm) { P.atm = false; P.aer = 0; addMark('대기 제거'); syncUI(); } });
+  $('sG').addEventListener('input', function (e) { P.g = +e.target.value; syncUI(); });
+  $('sC').addEventListener('input', function (e) { P.c = +e.target.value; syncUI(); });
+  $('sA').addEventListener('input', function (e) { P.alpha = +e.target.value; syncUI(); });
+  $('sS').addEventListener('input', function (e) { P.sol = +e.target.value; syncUI(); });
+  $('fb').addEventListener('change', function (e) { P.fb = e.target.checked; addMark(P.fb ? '되먹임 켬' : '되먹임 끔'); syncUI(); });
+  $('volc').addEventListener('click', function () { if (P.atm) { P.aer += 0.15; addMark('화산 폭발'); syncUI(); } });
+  var gb = document.querySelectorAll('[data-g]');
+  for (j = 0; j < gb.length; j++) gb[j].addEventListener('click', function (e) { P.g = +e.currentTarget.getAttribute('data-g'); syncUI(); });
+  var ab = document.querySelectorAll('[data-a]');
+  for (j = 0; j < ab.length; j++) ab[j].addEventListener('click', function (e) { P.alpha = +e.currentTarget.getAttribute('data-a'); syncUI(); });
+  $('play').addEventListener('click', function () { running = !running; syncUI(); });
+  $('reset').addEventListener('click', function () { resetAll(); });
+  $('speed').addEventListener('input', function (e) { speedIdx = +e.target.value; syncUI(); });
+  $('uRel').addEventListener('click', function () { unitW = false; syncUI(); });
+  $('uW').addEventListener('click', function () { unitW = true; syncUI(); });
+  var cw = $('chartWrap');
+  function setHover(e) { hover = e.clientX - cw.getBoundingClientRect().left; }
+  cw.addEventListener('pointermove', setHover); cw.addEventListener('pointerdown', setHover);
+  cw.addEventListener('pointerleave', function () { hover = null; }); cw.addEventListener('pointercancel', function () { hover = null; });
+
+  /* ---------- 메인 루프 ---------- */
+  var last = performance.now(), fn = 0, lastNarr = '';
+  function frame(now) {
+    var dtReal = Math.min(0.1, (now - last) / 1000); last = now;
+    if (fn % 30 === 0) readColors();
+    if (running) advance(dtReal * SPEEDS[speedIdx]);
+    if (dirty || fn % 8 === 0) { target = findTarget(P, Ts); }
+    drawSim(now, dtReal);
+    drawChart();
+    if (dirty || fn % 4 === 0) {
+      renderPanel();
+      $('clock').textContent = simT.toFixed(1);
+      var nr = describe(); if (nr !== lastNarr) { $('narr').textContent = nr; lastNarr = nr; }
+      dirty = false;
+    }
+    fn++;
+    requestAnimationFrame(frame);
+  }
+
+  readColors();
+  resizeAll();
+  resetAll();
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body></html>
