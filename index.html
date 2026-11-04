@@ -487,16 +487,16 @@ details ol { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction:
     { k: 'infull', c: '--sw', name: '입사 태양복사', pts: [[.07, .05], [.13, .10], [.13, .66]], v: function (b) { return b.S; }, lp: [.13, .40], noatm: true },
     { k: 'ra', c: '--sw', name: '대기·구름 반사', pts: [[.13, .30], [.21, .25], [.21, .01]], v: function (b) { return b.Ra; }, lp: [.21, .12], atm: true },
     { k: 'mid', c: '--sw', pts: [[.13, .30], [.13, .44]], v: function (b) { return b.S - b.Ra; }, atm: true, nolabel: true },
-    { k: 'A', c: '--sw', name: '대기 흡수', pts: [[.13, .44], [.28, .44]], v: function (b) { return b.A; }, lp: [.24, .39], atm: true },
+    { k: 'A', c: '--sw', name: '대기 흡수', pts: [[.13, .44], [.45, .44]], v: function (b) { return b.A; }, lp: [.24, .39], atm: true },
     { k: 'low', c: '--sw', name: '지표 도달', pts: [[.13, .44], [.13, .66]], v: function (b) { return b.reach; }, lp: [.13, .56], atm: true },
     { k: 'rs', c: '--sw', name: '지표 반사', pts: [[.35, .66], [.35, .01]], v: function (b) { return b.Rs; }, lp: [.35, .58] },
-    { k: 'up', c: '--lw', name: '지표 복사', pts: [[.47, .66], [.47, .44]], v: function (b) { return b.U; }, lp: [.47, .60], atm: true },
-    { k: 'win', c: '--lw', name: '대기창 통과', pts: [[.47, .44], [.47, .01]], v: function (b) { return b.win; }, lp: [.47, .20], atm: true },
+    { k: 'up', c: '--lw', name: '지표복사 흡수', pts: [[.52, .66], [.52, .50]], v: function (b) { return b.absU; }, lp: [.52, .60], atm: true },
+    { k: 'win', c: '--lw', name: '대기창 통과', pts: [[.40, .66], [.40, .01]], v: function (b) { return b.win; }, lp: [.40, .24], atm: true },
     { k: 'upfull', c: '--lw', name: '지표 복사', pts: [[.47, .66], [.47, .01]], v: function (b) { return b.U; }, lp: [.47, .35], noatm: true },
-    { k: 'gup', c: '--lw', name: '대기→우주', pts: [[.60, .46], [.60, .01]], v: function (b) { return b.Gup; }, lp: [.60, .28], atm: true },
-    { k: 'gdn', c: '--lw', name: '대기→지표', pts: [[.72, .46], [.72, .66]], v: function (b) { return b.Gdn; }, lp: [.72, .60], atm: true },
-    { k: 'lat', c: '--lat', name: '증발(잠열)', pts: [[.84, .66], [.84, .46]], v: function (b) { return b.LE; }, lp: [.84, .53], atm: true, wave: true },
-    { k: 'sen', c: '--sen', name: '대류(현열)', pts: [[.94, .66], [.94, .46]], v: function (b) { return b.H; }, lp: [.94, .60], atm: true }
+    { k: 'gup', c: '--lw', name: '대기→우주', pts: [[.62, .34], [.62, .01]], v: function (b) { return b.Gup; }, lp: [.62, .20], atm: true },
+    { k: 'gdn', c: '--lw', name: '대기→지표', pts: [[.73, .50], [.73, .66]], v: function (b) { return b.Gdn; }, lp: [.73, .60], atm: true },
+    { k: 'lat', c: '--lat', name: '증발(잠열)', pts: [[.84, .66], [.84, .50]], v: function (b) { return b.LE; }, lp: [.84, .55], atm: true, wave: true },
+    { k: 'sen', c: '--sen', name: '대류(현열)', pts: [[.94, .66], [.94, .50]], v: function (b) { return b.H; }, lp: [.94, .62], atm: true }
   ];
   var PART = {};
 
@@ -608,6 +608,17 @@ details ol { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction:
       ctx.beginPath(); ctx.moveTo(sxp + Math.cos(an) * sr * 1.25, syp + Math.sin(an) * sr * 1.25);
       ctx.lineTo(sxp + Math.cos(an) * sr * 1.6, syp + Math.sin(an) * sr * 1.6); ctx.stroke();
     }
+    // 대기 에너지 상자: 화살표가 들어가면 흡수, 나오면 방출
+    if (P.atm) {
+      var bx0 = 0.45 * W, bx1 = 0.985 * W, by0 = 0.34 * H, by1 = 0.50 * H;
+      rrect(ctx, bx0, by0, bx1 - bx0, by1 - by0, 8);
+      ctx.fillStyle = 'rgba(255,255,255,0.16)'; ctx.fill();
+      ctx.setLineDash([6, 4]); ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+      ctx.font = '700 ' + fs + 'px "IBM Plex Sans KR", sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      var btxt = small ? '대기' : '대기 (흡수 = 방출)';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.strokeText(btxt, bx0 + 8, by0 + 13);
+      ctx.fillStyle = '#ffffff'; ctx.fillText(btxt, bx0 + 8, by0 + 13);
+    }
     // 흐름
     var drawn = [];
     for (k = 0; k < SPEC.length; k++) {
@@ -655,6 +666,7 @@ details ol { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction:
       pill(ctx, d.sp.lp[0] * W, d.sp.lp[1] * H, small ? fmtD(d.val) : d.sp.name + ' ' + fmtD(d.val), d.col, fs);
     }
     pill(ctx, W * 0.13, H * 0.715, small ? fmtD(b.Qs) : '지표 흡수 ' + fmtD(b.Qs), C['--sw'], fs);
+    if (P.atm) pill(ctx, W * 0.46, H * 0.715, small ? fmtD(b.U) : '지표 복사 합계 ' + fmtD(b.U), C['--lw'], fs);
     // 기온 표시
     var tTxt = (Ts - 273.15).toFixed(1) + ' °C';
     ctx.font = '700 ' + (small ? 18 : 24) + 'px "IBM Plex Mono", ui-monospace, monospace';
